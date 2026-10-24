@@ -9,12 +9,20 @@ mas nao versionam migrations.
 ## Estrutura
 
 ```text
+.github/workflows/
+  database.yml            # CI: migrations, seed, db:lint e pgTAP em PR e push
+  deploy-production.yml   # Deploy: aplica migrations pendentes no push para main
+docs/
+  schema.md               # Mapa de tabelas, RLS, buckets e testes
 supabase/
   config.toml      # Configuracao do ambiente local (portas, Auth, Storage)
   migrations/      # Migrations SQL com timestamp, aplicadas em ordem
   tests/           # Testes pgTAP (schema, RLS, Storage, privilegios)
   seed.sql         # Dados ficticios apenas para desenvolvimento e testes
 ```
+
+Para entender as tabelas e as políticas de acesso, leia
+[docs/schema.md](docs/schema.md).
 
 ## Requisitos
 
@@ -82,6 +90,64 @@ O workflow `.github/workflows/database.yml` roda em pushes e pull requests para
 `dev`, `qual` e `main`. Ele sobe um Supabase limpo, aplicando migrations e seed,
 e executa `db:lint` e `db:test`.
 
-As migrations ainda nao sao aplicadas automaticamente nos projetos hospedados.
-Elas vieram de `veronica_lens_api` com os mesmos nomes de arquivo, para manter
-o historico de migrations ja registrado nesses projetos.
+O deploy nos projetos hospedados é feito por `deploy-production.yml`, descrito em "Ambientes e deploy".
+Os nomes dos arquivos de migration são os mesmos do histórico já registrado nesses
+projetos, por isso não renomeie migrations existentes.
+
+## Ambientes e deploy
+
+| Ambiente | Onde roda | Como as migrations chegam |
+| --- | --- | --- |
+| Local | Docker, via `npm run db:start` | `db:reset` aplica tudo do zero, com seed |
+| Produção | Projeto Supabase hospedado | `deploy-production.yml`, no push para `main` |
+
+`dev` e `qual` não fazem deploy. O projeto de produção recebe somente as
+migrations pendentes, sem seed e sem testes pgTAP.
+
+### Fluxo
+
+1. PR para `main`: a CI sobe o ambiente local do zero e roda lint e pgTAP.
+2. Após o merge em `main`, o job `deploy` entra no environment `production`.
+   Se o environment exigir revisão, o deploy espera a aprovação.
+3. O job faz `supabase link`, mostra `migration list --linked`, roda
+   `db push --dry-run` e só então aplica com `db push --linked --yes`.
+4. Se falhar, o log mostra a migration que parou. Nada é desfeito
+   automaticamente.
+
+Também é possível disparar manualmente em **Actions > Deploy production database
+> Run workflow**.
+
+### Segredos do environment `production`
+
+Configure em **Settings > Environments > production**. Não coloque esses valores
+no repositório.
+
+| Segredo | O que é |
+| --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | Token pessoal da conta Supabase com acesso ao projeto |
+| `SUPABASE_PROJECT_REF` | Identificador do projeto hospedado (aparece na URL do painel) |
+| `SUPABASE_DB_PASSWORD` | Senha do Postgres do projeto hospedado |
+
+### Antes do primeiro deploy automático
+
+Confira se o histórico do projeto hospedado bate com o repositório. Depois de
+`npx supabase link --project-ref <ref>`, rode:
+
+```powershell
+npx supabase migration list --linked
+```
+
+Se houver migration aplicada no remoto e ausente no repositório, ou o contrário,
+resolva antes de depender do deploy. Use `supabase migration repair` somente
+depois de entender a diferença.
+
+## Alterar o banco em produção
+
+- Produção muda somente por migration. Não altere tabelas, políticas ou buckets
+  pelo painel do Supabase, porque isso cria divergência e pode quebrar o próximo
+  deploy.
+- Migrations não são revertidas automaticamente. Para desfazer, crie uma nova
+  migration com a correção.
+- Não edite uma migration já aplicada em produção.
+- Mudanças destrutivas (apagar coluna ou tabela) devem ir em PR separado, com a
+  justificativa descrita.
