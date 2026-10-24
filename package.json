@@ -1,0 +1,23 @@
+{
+  "name": "veronica-lens-database",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Supabase schema, migrations, seed and database tests for Veronica Lens",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "db:start": "supabase start",
+    "db:status": "supabase status",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset --local",
+    "db:lint": "supabase db lint --local --level warning --fail-on error",
+    "db:test": "supabase test db",
+    "db:new": "supabase migration new",
+    "db:diff": "supabase db diff --local"
+  },
+  "devDependencies": {
+    "supabase": "2.122.0"
+  }
+}

@@ -1,0 +1,44 @@
+name: Database
+
+on:
+  push:
+    branches: [dev, qual, main]
+  pull_request:
+    branches: [dev, qual, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Migrations, lint & pgTAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Applies every migration and seed.sql on a clean local stack.
+      # Auth (gotrue) and Storage are required by the RLS and storage tests.
+      - name: Start local Supabase
+        run: >-
+          npx supabase start
+          --exclude realtime,imgproxy,mailpit,studio,edge-runtime,logflare,vector,supavisor,postgres-meta
+
+      - run: npm run db:lint
+      - run: npm run db:test
+
+      - name: Stop local Supabase
+        if: always()
+        run: npx supabase stop --no-backup
