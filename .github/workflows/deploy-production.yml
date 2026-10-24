@@ -1,0 +1,49 @@
+name: Deploy production database
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys at once. A queued deploy waits instead of cancelling a running one.
+concurrency:
+  group: database-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Apply pending migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Link project
+        run: npx supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Show migration history
+        run: npx supabase migration list --linked
+
+      # Lists the pending migrations before anything is applied, so the log shows what will change.
+      - name: Dry run
+        run: npx supabase db push --linked --dry-run
+
+      - name: Apply migrations
+        run: npx supabase db push --linked --yes
